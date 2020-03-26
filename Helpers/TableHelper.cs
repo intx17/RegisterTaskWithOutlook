@@ -36,9 +36,15 @@ namespace RegisterTaskWithOutlook.Helpers
         {
             TableQuery<OutlookTask> query = new TableQuery<OutlookTask>()
                 .Where(TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, userName));
-
-            var queryResult = await GetTasksTable().ExecuteQuerySegmentedAsync(query, null);
-            return queryResult.Results;
+            try
+            {
+                var queryResult = await GetTasksTable().ExecuteQuerySegmentedAsync(query, null);
+                return queryResult.Results;
+            }
+            catch (Exception)
+            {
+                return new List<OutlookTask>();
+            }
         }
 
         public static async Task<List<OutlookTask>> GetUserCurrentTasks(string userName)
@@ -48,12 +54,19 @@ namespace RegisterTaskWithOutlook.Helpers
                     TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, userName),
                     TableOperators.And,
                     TableQuery.GenerateFilterConditionForBool("IsCurrentTask", QueryComparisons.Equal, true)));
-
-            var queryResult = await GetTasksTable().ExecuteQuerySegmentedAsync(query, null);
-            if (queryResult.Results == null || queryResult.Results.Count <= 0) {
+            try
+            {
+                var queryResult = await GetTasksTable().ExecuteQuerySegmentedAsync(query, null);
+                if (queryResult.Results == null || queryResult.Results.Count <= 0)
+                {
+                    return new List<OutlookTask>();
+                }
+                return queryResult.Results;
+            }
+            catch (Exception)
+            {
                 return new List<OutlookTask>();
             }
-            return queryResult.Results;
         }
 
         public static async Task<bool> InsertTask(OutlookTask task)
@@ -75,25 +88,32 @@ namespace RegisterTaskWithOutlook.Helpers
             var table = GetTasksTable();
             var currentUserTasks = await GetUserCurrentTasks(userName);
 
-            // 一意性を保持するため、ユーザーの現在タスクをリセットする
-            // ループで回しているが、本来1タスクに対してしか行われない処理
-            foreach (var t in currentUserTasks)
+            try
             {
-                t.IsCurrentTask = false;
-                var operation = TableOperation.Replace(t);
-                await table.ExecuteAsync(operation);
+                // 一意性を保持するため、ユーザーの現在タスクをリセットする
+                // ループで回しているが、本来1タスクに対してしか行われない処理
+                foreach (var t in currentUserTasks)
+                {
+                    t.IsCurrentTask = false;
+                    var operation = TableOperation.Replace(t);
+                    await table.ExecuteAsync(operation);
+                }
+
+                var retriveOperation = TableOperation.Retrieve<OutlookTask>(userName, code);
+                var retrieveResult = await table.ExecuteAsync(retriveOperation);
+                var newCurrentTask = retrieveResult.Result as OutlookTask;
+
+                newCurrentTask.IsCurrentTask = true;
+                var replaceOperation = TableOperation.Replace(newCurrentTask);
+                var replaceResult = await table.ExecuteAsync(replaceOperation);
+
+                // 見つからなければnullが割り当てられる
+                return replaceResult.Result as OutlookTask;
             }
-
-            var retriveOperation = TableOperation.Retrieve(userName, code);
-            var retrieveResult = await table.ExecuteAsync(retriveOperation);
-            var newCurrentTask = retrieveResult.Result as OutlookTask;
-
-            newCurrentTask.IsCurrentTask = true;
-            var replaceOperation = TableOperation.Replace(newCurrentTask);
-            var replaceResult = await table.ExecuteAsync(replaceOperation);
-            
-            // 見つからなければnullが割り当てられる
-            return replaceResult.Result as OutlookTask;
+            catch (Exception)
+            {
+                return null;
+            }
         }
     }
 }

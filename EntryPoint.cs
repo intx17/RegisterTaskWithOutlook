@@ -175,8 +175,8 @@ namespace RegisterTaskWithOutlook.Function
             var result = await TableHelper.UpdateUserCurrentTask(userName, code);
 
             payload.Text = result == null
-            ? $"現在のタスク設定に成功しました. task={JsonConvert.SerializeObject(result)}"
-            : $"現在のタスク設定に失敗しました.";
+            ? $"現在のタスク設定に失敗しました."
+            : $"現在のタスク設定に成功しました. task={JsonConvert.SerializeObject(result)}";
             await SendIncomingWebhook(payload);
         }
     }
